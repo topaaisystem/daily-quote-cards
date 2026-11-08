@@ -37,6 +37,12 @@ class KakaoSendTests(unittest.TestCase):
             ks.save_status({'2026-11-09': 'pending'})
             self.assertEqual(ks.main([]), 0)
 
+    def test_sent_day_exits_cleanly_without_record_file(self):
+        with tempfile.TemporaryDirectory() as d, patch.object(ks, 'STATUS', Path(d) / 's.json'), \
+                patch.object(ks.fp, 'today', return_value='2026-11-09'), patch.object(ks.fp, 'OUT', Path(d) / 'none'):
+            ks.save_status({'2026-11-09': 'sent'})
+            self.assertEqual(ks.main([]), 0)      # record.json 이 없어도 오류 없이 종료
+
     def test_dry_run_makes_no_network_call(self):
         with tempfile.TemporaryDirectory() as d, patch.object(ks.fp, 'today', return_value='2026-11-09'), \
                 patch.object(ks.fp, 'OUT', Path(d)), patch.object(ks, 'post', side_effect=AssertionError('호출 금지')):

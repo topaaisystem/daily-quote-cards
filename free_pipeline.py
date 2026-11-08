@@ -100,6 +100,12 @@ def make(theme=None, attempt=0, day=None):
     return record
 
 
+def already_handled(day):
+    """오늘 이미 발송했거나(pending 포함) 발송 중인 날짜면 True → 카드 재생성·덮어쓰기 금지."""
+    status = ROOT / 'data' / 'status.json'
+    return status.exists() and json.loads(status.read_text(encoding='utf-8')).get(day) in ('pending', 'sent')
+
+
 def publish(day):
     """카드를 Pages가 서빙하는 cards/<날짜>.jpg 로 복사하고 오래된 카드를 정리."""
     import shutil
@@ -119,6 +125,9 @@ if __name__ == '__main__':
     p.add_argument('--attempt', type=int, default=0)
     p.add_argument('--publish', action='store_true', help='cards/<날짜>.jpg 로 복사(Pages용)')
     a = p.parse_args()
+    if a.publish and already_handled(today()):
+        log(f'{today()} 는 이미 발송 처리됨. 카드를 다시 만들지 않습니다.')
+        sys.exit(0)
     r = make(a.theme, a.attempt)
     if a.publish:
         log('게시용 복사:', publish(r['day']))

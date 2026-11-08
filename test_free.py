@@ -71,6 +71,19 @@ class FreeSourceTests(unittest.TestCase):
                 patch.object(w, 'mymemory_ko', return_value='대체 번역입니다.'):
             self.assertEqual(w.translate_ko('Hello there my friend.')[1], '자동 번역(MyMemory)')
 
+    def test_sent_day_is_not_regenerated(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        import free_pipeline as fp
+        with tempfile.TemporaryDirectory() as d, patch.object(fp, 'ROOT', Path(d)):
+            self.assertFalse(fp.already_handled('2026-11-09'))
+            (Path(d) / 'data').mkdir()
+            (Path(d) / 'data' / 'status.json').write_text(json.dumps({'2026-11-09': 'sent', '2026-11-08': 'failed'}))
+            self.assertTrue(fp.already_handled('2026-11-09'))
+            self.assertFalse(fp.already_handled('2026-11-10'))
+            self.assertFalse(fp.already_handled('2026-11-08'))
+
     def test_clean_markup(self):
         self.assertEqual(w.clean("[[Foo|bar]] '''bold''' <br> {{cite}}[https://x.y link]"), 'bar bold link')
 

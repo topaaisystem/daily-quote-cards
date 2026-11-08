@@ -105,14 +105,14 @@ def refresh_access_token():
 def main(argv):
     dry = '--dry-run' in argv
     day = fp.today()
+    status = load_status()
+    if not dry and status.get(day) in ('pending', 'sent'):      # 카드 재생성이 생략된 날도 정상 종료
+        print(f'{day} 처리 기록: {status[day]}. 중복 발송하지 않습니다.')
+        return 0
     record = json.loads((fp.OUT / day / 'record.json').read_text(encoding='utf-8'))
     body = template(record, day)
     if dry:
         print(json.dumps(body, ensure_ascii=False, indent=2))
-        return 0
-    status = load_status()
-    if status.get(day) in ('pending', 'sent'):
-        print(f'{day} 처리 기록: {status[day]}. 중복 발송하지 않습니다.')
         return 0
     wait_for_image(card_url(day))
     access, rotated = refresh_access_token()
