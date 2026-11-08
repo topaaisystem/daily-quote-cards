@@ -5,6 +5,10 @@
 !free_card.py
 !free_pipeline.py
 !test_free.py
+!kakao_send.py
+!test_kakao_send.py
+!data/
+!data/*.json
 !requirements.txt
 !fonts/
 !fonts/*
@@ -16,3 +20,4 @@
 .private/
 __pycache__/
 *.log
+

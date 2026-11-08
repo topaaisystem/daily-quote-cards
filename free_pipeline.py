@@ -16,7 +16,10 @@ import wiki_free as w
 
 ROOT = Path(__file__).resolve().parent
 OUT = ROOT / 'output' / 'free'
-HISTORY = ROOT / '.private' / 'free_history.json'
+import os
+HISTORY = Path(os.environ.get('QUOTE_HISTORY') or ROOT / '.private' / 'free_history.json')  # Actions에서는 data/history.json
+CARDS = ROOT / 'cards'
+KEEP_CARDS = 90                                   # Pages 용량 관리: 최근 90일 카드만 유지
 KST = ZoneInfo('Asia/Seoul')
 LABELS = {'courage': 'Courage', 'strength': 'Strength', 'joy': 'Joy', 'success': 'Success'}
 log = lambda *a: print(*a, file=sys.stderr, flush=True)
@@ -35,7 +38,7 @@ def mark_sent(record):
     h = load_history()
     h['used'].append(record['quote']['id'])
     h['people'][record['person']['name']] = record['day']
-    HISTORY.parent.mkdir(exist_ok=True)
+    HISTORY.parent.mkdir(parents=True, exist_ok=True)
     HISTORY.write_text(json.dumps(h, ensure_ascii=False, indent=2), encoding='utf-8')
 
 
@@ -96,6 +99,16 @@ def make(theme=None, attempt=0, day=None):
     return record
 
 
+def publish(day):
+    """카드를 Pages가 서빙하는 cards/<날짜>.jpg 로 복사하고 오래된 카드를 정리."""
+    import shutil
+    CARDS.mkdir(exist_ok=True)
+    shutil.copy2(OUT / day / 'card.jpg', CARDS / f'{day}.jpg')
+    for old in sorted(CARDS.glob('*.jpg'))[:-KEEP_CARDS]:
+        old.unlink()
+    return CARDS / f'{day}.jpg'
+
+
 if __name__ == '__main__':
     for s in (sys.stdout, sys.stderr):
         s.reconfigure(encoding='utf-8')
@@ -103,6 +116,9 @@ if __name__ == '__main__':
     p.add_argument('command', choices=['make'])
     p.add_argument('--theme', choices=list(w.THEMES))
     p.add_argument('--attempt', type=int, default=0)
+    p.add_argument('--publish', action='store_true', help='cards/<날짜>.jpg 로 복사(Pages용)')
     a = p.parse_args()
     r = make(a.theme, a.attempt)
+    if a.publish:
+        log('게시용 복사:', publish(r['day']))
     print(json.dumps({'card': str(OUT / r['day'] / 'card.jpg'), 'person': r['person']['name'], 'en': r['quote']['en'], 'ko': r['quote']['ko']}, ensure_ascii=False, indent=2))

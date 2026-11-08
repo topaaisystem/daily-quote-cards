@@ -1,0 +1,48 @@
+name: daily-quote
+
+on:
+  schedule:
+    - cron: '30 23 * * *'        # UTC 23:30 = 한국시간 08:30 (GitHub 사정으로 수~수십 분 늦을 수 있음)
+  workflow_dispatch:
+    inputs:
+      send:
+        description: '카카오톡으로 실제 발송 (true/false)'
+        default: 'false'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-quote
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      QUOTE_HISTORY: data/history.json
+      CI_COMMIT: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Offline tests
+        run: python -X utf8 -m unittest -q
+      - name: Make card
+        run: python -X utf8 free_pipeline.py make --publish
+      - name: Publish card to Pages
+        run: |
+          git config user.name daily-quote-bot
+          git config user.email daily-quote-bot@users.noreply.github.com
+          git add cards
+          git diff --cached --quiet || { git commit -m "card $(date -u +%F-%H%M)"; git pull --rebase -q; git push -q; }
+      - name: Send to KakaoTalk
+        if: github.event_name == 'schedule' || github.event.inputs.send == 'true'
+        env:
+          KAKAO_REST_KEY: ${{ secrets.KAKAO_REST_KEY }}
+          KAKAO_REFRESH_TOKEN: ${{ secrets.KAKAO_REFRESH_TOKEN }}
+          KAKAO_CLIENT_SECRET: ${{ secrets.KAKAO_CLIENT_SECRET }}
+        run: python -X utf8 kakao_send.py
