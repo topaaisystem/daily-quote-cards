@@ -129,7 +129,7 @@ def render(record, portrait_bytes, background_bytes, out_path):
         draw.text((tx, 1356 + i * 28), line, font=src_font, fill=SOFT)
 
     credit_font = font('malgun.ttf', 18)
-    draw.text((96, 1464), f"Quote: Wikiquote (CC BY-SA) \u00b7 Portrait: Wikimedia Commons, {port['license']} \u00b7 한국어: 자동 번역",
+    draw.text((96, 1464), f"Quote: Wikiquote (CC BY-SA) \u00b7 Portrait: Wikimedia Commons, {port['license']} \u00b7 한국어: {q.get('ko_label', '자동 번역')}",
               font=credit_font, fill='#a8a498')
     bg_line = f"Background: {re.sub(r'[_]+', ' ', bg['title'])}, {bg['license']}"
     while draw.textlength(bg_line, font=credit_font) > SIZE - 192:

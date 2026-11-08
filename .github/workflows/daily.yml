@@ -32,6 +32,8 @@ jobs:
       - name: Offline tests
         run: python -X utf8 -m unittest -q
       - name: Make card
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}   # 없으면 MyMemory 무료 번역으로 자동 대체
         run: python -X utf8 free_pipeline.py make --publish
       - name: Publish card to Pages
         run: |

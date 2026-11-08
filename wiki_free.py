@@ -163,7 +163,7 @@ def download(url):
     return _get(url)
 
 
-def translate_ko(text):
+def mymemory_ko(text):
     """MyMemory 무료 번역(키 없음, 일일 한도 있음). 실패하면 빈 문자열."""
     try:
         data = api('https://api.mymemory.translated.net/get', q=text, langpair='en|ko')
@@ -173,6 +173,52 @@ def translate_ko(text):
     except Exception:
         pass
     return ''
+
+
+LLM_SYSTEM = ('You translate English quotations into natural, elegant Korean (의역 allowed, but stay faithful '
+              'to the meaning and tone). Use a polite literary register suitable for a famous saying. '
+              'Output ONLY the Korean translation: no quotes, no notes, no romanization.')
+
+
+def _post_json(url, payload, key, timeout=45):
+    req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers={
+        'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key, 'User-Agent': UA})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read().decode('utf-8'))
+
+
+def valid_korean(src, out):
+    """번역 결과 검증: 한글 비중, 길이 비율, 영어 원문 그대로 반환 방지."""
+    hangul = sum('가' <= c <= '힣' for c in out)
+    letters = sum(c.isalpha() for c in out) or 1
+    return bool(out) and hangul / letters >= 0.6 and 0.25 <= len(out) / max(len(src), 1) <= 2.5 and out != src
+
+
+def llm_ko(text, key=None):
+    """OpenAI 호환 채팅 API(Groq 기본; TRANSLATE_BASE_URL/TRANSLATE_MODEL로 OpenRouter·Mistral 등 교체 가능)."""
+    import os
+    key = key or os.environ.get('TRANSLATE_API_KEY') or os.environ.get('GROQ_API_KEY')
+    if not key:
+        return '', ''
+    base = os.environ.get('TRANSLATE_BASE_URL', 'https://api.groq.com/openai/v1').rstrip('/')
+    model = os.environ.get('TRANSLATE_MODEL', 'openai/gpt-oss-120b')
+    try:                                               # 키·응답 본문은 출력하지 않음
+        data = _post_json(f'{base}/chat/completions', {
+            'model': model, 'temperature': 0.3, 'max_completion_tokens': 1200,
+            'messages': [{'role': 'system', 'content': LLM_SYSTEM}, {'role': 'user', 'content': text}]}, key)
+        out = data['choices'][0]['message']['content'].strip().strip('"“”')
+    except Exception:
+        return '', ''
+    return (out, f'AI 번역({model})') if valid_korean(text, out) else ('', '')
+
+
+def translate_ko(text):
+    """(한국어, 제공처 표기). AI 번역을 먼저 시도하고, 키가 없거나 실패·검증 탈락 시 MyMemory로 대체."""
+    out, label = llm_ko(text)
+    if out:
+        return out, label
+    out = mymemory_ko(text)
+    return (out, '자동 번역(MyMemory)') if out else ('', '')
 
 
 def background(seed, min_width=1800):

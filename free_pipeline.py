@@ -66,8 +66,9 @@ def pick(theme, day, attempt, history, limit=30):
             continue
         rng.shuffle(cands)
         for cand in cands[:3]:
-            ko = w.translate_ko(cand['text'])
+            ko, label = w.translate_ko(cand['text'])
             if ko:
+                cand = dict(cand, ko_label=label)
                 return info, portrait, cand, ko
     raise RuntimeError('조건(출처·초상 라이선스·주제)에 맞는 명언을 찾지 못했습니다. 다시 시도하세요.')
 
@@ -86,7 +87,7 @@ def make(theme=None, attempt=0, day=None):
     record = {
         'day': day, 'theme': theme, 'theme_label': LABELS[theme],
         'quote': {'id': quote_id(cand['text']), 'en': cand['text'], 'ko': ko, 'source': cand['source'],
-                  'ko_note': 'MyMemory 자동 번역(검수 전)', 'wikiquote': 'https://en.wikiquote.org/wiki/' + info['title'].replace(' ', '_')},
+                  'ko_note': cand['ko_label'] + ' (검수 전)', 'ko_label': cand['ko_label'], 'wikiquote': 'https://en.wikiquote.org/wiki/' + info['title'].replace(' ', '_')},
         'person': {'name': info['title'], 'ko': info['ko'], 'desc': info['desc'],
                    'wikipedia': 'https://en.wikipedia.org/wiki/' + info['title'].replace(' ', '_')},
         'portrait': {k: portrait[k] for k in ('license', 'artist', 'page')},

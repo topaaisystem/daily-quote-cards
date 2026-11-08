@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 import wiki_free as w
 
@@ -45,6 +46,30 @@ class FreeSourceTests(unittest.TestCase):
     def test_songwriters_are_not_quote_sources(self):
         self.assertTrue(w.NON_QUOTE_PERSON.search('American singer-songwriter (1912–1967)'))
         self.assertFalse(w.NON_QUOTE_PERSON.search('President of the United States in 1881'))
+
+    def test_llm_translation_is_used_when_valid(self):
+        reply = {'choices': [{'message': {'content': '"노력은 재능을 대신할 수 있는 최선의 길이다."'}}]}
+        with patch.dict('os.environ', {'GROQ_API_KEY': 'k'}), patch.object(w, '_post_json', return_value=reply), \
+                patch.object(w, 'mymemory_ko', side_effect=AssertionError('호출 금지')):
+            ko, label = w.translate_ko('Hard work is the best substitute for talent.')
+        self.assertEqual(ko, '노력은 재능을 대신할 수 있는 최선의 길이다.')
+        self.assertIn('AI 번역', label)
+
+    def test_english_or_empty_llm_output_falls_back(self):
+        for bad in ({'choices': [{'message': {'content': 'Hard work is the best substitute for talent.'}}]},
+                    {'choices': [{'message': {'content': ''}}]}):
+            with patch.dict('os.environ', {'GROQ_API_KEY': 'k'}), patch.object(w, '_post_json', return_value=bad), \
+                    patch.object(w, 'mymemory_ko', return_value='대체 번역입니다.'):
+                ko, label = w.translate_ko('Hard work is the best substitute for talent.')
+            self.assertEqual((ko, label), ('대체 번역입니다.', '자동 번역(MyMemory)'))
+
+    def test_api_error_falls_back_and_no_key_skips_llm(self):
+        with patch.dict('os.environ', {'GROQ_API_KEY': 'k'}), patch.object(w, '_post_json', side_effect=OSError('x')), \
+                patch.object(w, 'mymemory_ko', return_value='대체 번역입니다.'):
+            self.assertEqual(w.translate_ko('Hello there my friend.')[0], '대체 번역입니다.')
+        with patch.dict('os.environ', {}, clear=True), patch.object(w, '_post_json', side_effect=AssertionError('호출 금지')), \
+                patch.object(w, 'mymemory_ko', return_value='대체 번역입니다.'):
+            self.assertEqual(w.translate_ko('Hello there my friend.')[1], '자동 번역(MyMemory)')
 
     def test_clean_markup(self):
         self.assertEqual(w.clean("[[Foo|bar]] '''bold''' <br> {{cite}}[https://x.y link]"), 'bar bold link')
