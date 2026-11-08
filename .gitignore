@@ -1,0 +1,18 @@
+﻿# 공개 저장소용 화이트리스트: 아래에 명시한 파일만 올립니다. 키·토큰·이력·개인 자료는 제외.
+*
+!.gitignore
+!wiki_free.py
+!free_card.py
+!free_pipeline.py
+!test_free.py
+!requirements.txt
+!fonts/
+!fonts/*
+!cards/
+!cards/*.jpg
+!.github/
+!.github/workflows/
+!.github/workflows/*.yml
+.private/
+__pycache__/
+*.log
