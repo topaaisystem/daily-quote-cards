@@ -37,6 +37,15 @@ class FreeSourceTests(unittest.TestCase):
         self.assertTrue(w.on_theme('He showed great courage', 'courage'))
         self.assertFalse(w.on_theme('The table is brown', 'courage'))
 
+    def test_theme_words_need_word_start(self):
+        self.assertFalse(w.on_theme('And all around me the wind keeps saying', 'success'))   # wind != win
+        self.assertTrue(w.on_theme('If hard work is not another name for talent', 'success'))
+        self.assertFalse(w.on_theme('A fallacy of reason', 'strength'))
+
+    def test_songwriters_are_not_quote_sources(self):
+        self.assertTrue(w.NON_QUOTE_PERSON.search('American singer-songwriter (1912–1967)'))
+        self.assertFalse(w.NON_QUOTE_PERSON.search('President of the United States in 1881'))
+
     def test_clean_markup(self):
         self.assertEqual(w.clean("[[Foo|bar]] '''bold''' <br> {{cite}}[https://x.y link]"), 'bar bold link')
 

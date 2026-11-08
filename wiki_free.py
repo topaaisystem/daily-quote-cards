@@ -75,12 +75,15 @@ def theme_people(theme):
     return names
 
 
+# 단어 시작(\b)을 강제해 'wind'가 'win'에, 'fallacy'가 'fall'에 걸리지 않게 함
 THEME_WORDS = {
-    'courage': r'courag|brave|bold|fear|dare|valor|heart',
-    'strength': r'strength|strong|persever|persist|endur|resil|fall|rise|never give|determin|patience',
-    'joy': r'happi|joy|smile|laugh|gratitude|grateful|cheer|delight|content|optimis|sunshine',
-    'success': r'success|achiev|hope|confiden|dream|goal|believe|work|effort|victory|win',
+    'courage': r'\b(courag|brave|bold|fear|dare|daring|valor|valour)',
+    'strength': r'\b(strength|strong|persever|persist|endur|resilien|determin|patien|never give up)',
+    'joy': r'\b(happi|joy|smil|laugh|gratitude|grateful|cheer|delight|optimis|sunshine)',
+    'success': r'\b(success|succeed|achiev|hope|confiden|dream|goal|believ|effort|victor)|\b(win|wins|winning|work|works|hard work)\b',
 }
+# 가수·작곡가 등은 노래 가사가 "명언"으로 섞이기 쉬워 제외
+NON_QUOTE_PERSON = re.compile(r'singer|songwriter|rapper|musician|\bband\b|lyricist|composer', re.I)
 
 
 def on_theme(text, theme):

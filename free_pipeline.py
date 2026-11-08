@@ -54,7 +54,7 @@ def pick(theme, day, attempt, history, limit=30):
         if name in history['people']:
             continue                                   # 한 번 보낸 인물은 당분간 제외
         info = w.person_info(name)
-        if not info or not info['image'] or 'fiction' in info['desc'].lower():
+        if not info or not info['image'] or 'fiction' in info['desc'].lower() or w.NON_QUOTE_PERSON.search(info['desc']):
             continue
         portrait = w.commons_file(info['image'], 700)
         if not portrait:
