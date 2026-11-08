@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>매일 명언 카드</title>
+<style>
+:root{--bg:#f4f1ea;--fg:#1d1d22;--sub:#6b665a;--line:#ddd6c6;--gold:#a8782a}
+@media (prefers-color-scheme:dark){:root{--bg:#14151a;--fg:#ece8dd;--sub:#a8a498;--line:#33363f;--gold:#e2bd78}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 'Malgun Gothic','Apple SD Gothic Neo',sans-serif}
+main{max-width:640px;margin:0 auto;padding:24px 16px 40px}
+h1{font-size:22px;margin:0 0 4px}
+p.sub{margin:0 0 16px;color:var(--sub);font-size:14px}
+img{display:block;width:100%;height:auto;border-radius:12px;border:1px solid var(--line)}
+p#state{color:var(--sub)}
+footer{margin-top:20px;color:var(--sub);font-size:13px}
+a{color:var(--gold)}
+</style>
+</head>
+<body>
+<main>
+  <h1>매일 명언 카드</h1>
+  <p class="sub" id="date"></p>
+  <p id="state" role="status">오늘의 카드를 불러오는 중…</p>
+  <a id="open" href="#" target="_blank" rel="noopener" hidden><img id="card" alt="오늘의 명언 카드"></a>
+  <footer>매일 아침 08:30(한국시간)에 새 카드가 만들어집니다. 명언 출처는 위키인용집, 초상·배경은 위키미디어 커먼스(퍼블릭 도메인)입니다.</footer>
+</main>
+<script>
+// 같은 파일을 프로젝트 저장소와 사용자 사이트 저장소 어디에 두어도 동작하도록 카드 주소를 고정
+const BASE = 'https://topaaisystem.github.io/daily-quote-cards/cards/';
+const fmt = new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit'});
+const kstToday = () => fmt.format(new Date());                       // YYYY-MM-DD (한국시간)
+const daysAgo = n => fmt.format(new Date(Date.now() - n * 86400000));
+const card = document.getElementById('card'), state = document.getElementById('state');
+let tries = 0;
+function load() {
+  if (tries > 14) { state.textContent = '표시할 카드를 찾지 못했습니다. 잠시 후 다시 열어 주세요.'; return; }
+  const day = daysAgo(tries++);
+  card.onload = () => {
+    state.hidden = true;
+    document.getElementById('open').hidden = false;
+    document.getElementById('open').href = BASE + day + '.jpg';
+    document.getElementById('date').textContent = day === kstToday() ? '오늘의 카드 · ' + day : '최근 카드 · ' + day;
+  };
+  card.onerror = load;                                                // 오늘 카드가 아직 없으면 어제, 그제… 순서로 시도
+  card.src = BASE + day + '.jpg';
+}
+load();
+</script>
+</body>
+</html>
