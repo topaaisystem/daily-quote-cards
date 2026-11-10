@@ -79,6 +79,22 @@ def wait_for_image(url, timeout=420):
     raise RuntimeError(f'이미지가 공개되지 않았습니다: {url}')
 
 
+def wait_until_send_time(now=None, sleep=time.sleep):
+    """SEND_AT(예: 08:30, 한국시간)이 지정되고 아직 이전이면 그 시각까지 대기(최대 90분).
+    GitHub 예약 실행이 일찍 시작해도 정해진 시각에 맞춰 보내기 위함. 이미 지났으면 즉시 진행."""
+    at = os.environ.get('SEND_AT', '').strip()
+    if not at:
+        return 0
+    hour, minute = (int(x) for x in at.split(':'))
+    now = now or fp.datetime.now(fp.KST)
+    seconds = (now.replace(hour=hour, minute=minute, second=0, microsecond=0) - now).total_seconds()
+    if 0 < seconds <= 5400:
+        print(f'{at}(KST)까지 {int(seconds)}초 대기합니다.')
+        sleep(seconds)
+        return seconds
+    return 0
+
+
 def post(url, data, token=None):
     headers = {'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8'}
     if token:
@@ -115,6 +131,7 @@ def main(argv):
         print(json.dumps(body, ensure_ascii=False, indent=2))
         return 0
     wait_for_image(card_url(day))
+    wait_until_send_time()                               # 이미지 공개 확인 후, 토큰 갱신 전에 대기
     access, rotated = refresh_access_token()
     status[day] = 'pending'                              # 발송 의도를 먼저 기록·커밋
     save_status(status)

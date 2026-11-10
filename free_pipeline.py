@@ -46,7 +46,23 @@ def quote_id(text):
     return hashlib.sha256(text.encode('utf-8')).hexdigest()[:16]
 
 
+MIN_SCORE = 8            # 10점 만점, 이 점수 이상만 사용
+RATING_BUDGET = 25       # 한 번 실행에서 AI 평가 최대 호출 수(무료 한도 보호)
+
+
+def accepted(cand, budget):
+    """내용이 '힘이 나는 명언'인지 판정. AI 평가가 가능하면 점수, 아니면 보수적 키워드 필터."""
+    if budget['left'] > 0:
+        score = w.llm_score(cand['text'])
+        if score is not None:
+            budget['left'] -= 1
+            log(f"  평가 {score}/10: {cand['text'][:70]}")
+            return score >= MIN_SCORE
+    return not w.looks_off_topic(cand['text'])
+
+
 def pick(theme, day, attempt, history, limit=30):
+    budget = {'left': RATING_BUDGET}
     rng = random.Random(f'{day}|{theme}|{attempt}')
     people = w.theme_people(theme)
     rng.shuffle(people)
@@ -65,7 +81,9 @@ def pick(theme, day, attempt, history, limit=30):
         if not cands:
             continue
         rng.shuffle(cands)
-        for cand in cands[:3]:
+        for cand in cands[:6]:
+            if not accepted(cand, budget):
+                continue
             ko, label = w.translate_ko(cand['text'])
             if ko:
                 cand = dict(cand, ko_label=label)

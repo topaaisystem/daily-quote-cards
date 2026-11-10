@@ -123,7 +123,7 @@ def sourced_quotes(text):
             continue  # 편집 표기·번역본 주석·미완결 문장 제외
         if re.search(r'\b(said|wrote|asked)\b[: ,]*$', body):
             continue
-        out.append({'text': body.strip('"“” '), 'source': source})
+        out.append({'text': body.strip('"“” ').replace(' -- ', ' — '), 'source': source})
     return out
 
 
@@ -210,6 +210,38 @@ def llm_ko(text, key=None):
     except Exception:
         return '', ''
     return (out, f'AI 번역({model})') if valid_korean(text, out) else ('', '')
+
+
+RATE_SYSTEM = ('You judge quotations for a MORNING motivational message. Reply with ONLY a JSON object like '
+               '{"score": 7}. Score 1-10: 10 = a timeless, self-contained saying that clearly gives courage, strength, '
+               'joy or helps someone succeed. Score 4 or less for politics, diplomacy, war, government or policy, '
+               'religious disputes, insults, jokes, descriptions of events, anything that needs outside context to '
+               'make sense, or a negative or pessimistic tone.')
+OFF_TOPIC = re.compile(r'\b(war|wars|nation|nations|government|congress|treaty|enemy|enemies|soldier|army|political|'
+                       r'policy|tax|taxes|election|vote|senate|diplomacy|communis\w*|foreign|world affairs)\b', re.I)
+
+
+def looks_off_topic(text):
+    """AI 평가를 쓸 수 없을 때의 보수적 대체 필터: 정치·전쟁·외교 문장 제외."""
+    return OFF_TOPIC.search(text) is not None
+
+
+def llm_score(text):
+    """명언이 '아침에 힘이 나는 명언'인지 1~10점으로 평가. 키가 없거나 실패하면 None."""
+    import os
+    key = os.environ.get('TRANSLATE_API_KEY') or os.environ.get('GROQ_API_KEY')
+    if not key:
+        return None
+    base = os.environ.get('TRANSLATE_BASE_URL', 'https://api.groq.com/openai/v1').rstrip('/')
+    model = os.environ.get('TRANSLATE_MODEL', 'openai/gpt-oss-120b')
+    try:
+        data = _post_json(f'{base}/chat/completions', {
+            'model': model, 'temperature': 0, 'max_completion_tokens': 600,
+            'messages': [{'role': 'system', 'content': RATE_SYSTEM}, {'role': 'user', 'content': text}]}, key)
+        m = re.search(r'"score"\s*:\s*(\d+)', data['choices'][0]['message']['content'])
+        return min(int(m.group(1)), 10) if m else None
+    except Exception:
+        return None
 
 
 def translate_ko(text):

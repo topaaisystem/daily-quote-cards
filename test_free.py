@@ -71,6 +71,33 @@ class FreeSourceTests(unittest.TestCase):
                 patch.object(w, 'mymemory_ko', return_value='대체 번역입니다.'):
             self.assertEqual(w.translate_ko('Hello there my friend.')[1], '자동 번역(MyMemory)')
 
+    def test_llm_score_parsing_and_missing_key(self):
+        reply = {'choices': [{'message': {'content': '{"score": 9}'}}]}
+        with patch.dict('os.environ', {'GROQ_API_KEY': 'k'}), patch.object(w, '_post_json', return_value=reply):
+            self.assertEqual(w.llm_score('Keep going.'), 9)
+        with patch.dict('os.environ', {}, clear=True), patch.object(w, '_post_json', side_effect=AssertionError('호출 금지')):
+            self.assertIsNone(w.llm_score('Keep going.'))
+        with patch.dict('os.environ', {'GROQ_API_KEY': 'k'}), patch.object(w, '_post_json', side_effect=OSError('x')):
+            self.assertIsNone(w.llm_score('Keep going.'))
+
+    def test_political_quote_rejected_by_score_and_by_fallback(self):
+        import free_pipeline as fp
+        cand = {'text': 'There is in world affairs a steady course between strength and helplessness.'}
+        with patch.object(w, 'llm_score', return_value=3):
+            self.assertFalse(fp.accepted(cand, {'left': 5}))
+        with patch.object(w, 'llm_score', return_value=9):
+            self.assertTrue(fp.accepted({'text': 'Never give up on a dream.'}, {'left': 5}))
+        with patch.object(w, 'llm_score', return_value=None):      # 키 없음 → 키워드 대체 필터
+            self.assertFalse(fp.accepted(cand, {'left': 5}))
+            self.assertTrue(fp.accepted({'text': 'Never give up on a dream.'}, {'left': 5}))
+        with patch.object(w, 'llm_score', side_effect=AssertionError('예산 소진 후 호출 금지')):
+            self.assertTrue(fp.accepted({'text': 'Never give up on a dream.'}, {'left': 0}))
+
+    def test_double_dash_is_normalized(self):
+        text = "== Sourced ==\n* There is -- in this life -- always a way forward for the brave heart.\n** Letters (1900)\n"
+        self.assertIn('—', w.sourced_quotes(text)[0]['text'])
+        self.assertNotIn('--', w.sourced_quotes(text)[0]['text'])
+
     def test_sent_day_is_not_regenerated(self):
         import json
         import tempfile
