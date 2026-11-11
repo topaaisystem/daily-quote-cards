@@ -24,21 +24,29 @@ STATUS = ROOT / 'data' / 'status.json'
 PAGES = os.environ.get('PAGES_BASE', 'https://topaaisystem.github.io/daily-quote-cards').rstrip('/')
 
 
+SITE = os.environ.get('SITE_BASE', 'https://topaaisystem.github.io').rstrip('/')   # 카카오 콘솔에 등록된 기본 웹 도메인
+
+
 def card_url(day):
     return f'{PAGES}/cards/{day}.jpg'
 
 
+def page_url(day):
+    """카드를 누르면 열리는 페이지(다운로드 버튼 포함). ?d=날짜로 그날 카드를 지정."""
+    return f'{SITE}/?d={day}'
+
+
 def template(record, day):
-    url = card_url(day)
+    url, page = card_url(day), page_url(day)
     return {
         'object_type': 'feed',
         'content': {
             'title': record['person']['name'],
             'description': record['quote']['ko'],
             'image_url': url, 'image_width': 1536, 'image_height': 1536,
-            'link': {'web_url': url, 'mobile_web_url': url},
+            'link': {'web_url': page, 'mobile_web_url': page},
         },
-        'button_title': '카드 크게 보기',
+        'button_title': '이미지 저장',
     }
 
 

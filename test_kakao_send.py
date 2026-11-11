@@ -18,6 +18,8 @@ class KakaoSendTests(unittest.TestCase):
         self.assertTrue(c['image_url'].endswith('/cards/2026-11-09.jpg'))
         self.assertEqual((c['image_width'], c['image_height']), (1536, 1536))
         self.assertIn('web_url', c['link'])          # 카카오 문서: link 필수
+        self.assertEqual(c['link']['web_url'], 'https://topaaisystem.github.io/?d=2026-11-09')   # 다운로드 페이지(등록된 도메인)
+        self.assertEqual(c['link']['mobile_web_url'], c['link']['web_url'])
         self.assertTrue(len(t['button_title']) <= 8)  # 버튼 제목 8자 이내 권장
 
     def test_status_roundtrip_and_duplicate_guard(self):
