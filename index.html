@@ -32,11 +32,11 @@ footer{margin-top:20px;color:var(--sub);font-size:13px}
   <p id="state" role="status">카드를 불러오는 중…</p>
   <img id="card" alt="명언 카드" hidden>
   <div class="actions" id="actions" hidden>
-    <button type="button" id="dl">이미지 다운로드</button>
+    <a class="btn" id="dl" href="#" download>이미지 다운로드</a>
     <button type="button" id="share" class="alt" hidden>공유 / 사진 앱에 저장</button>
-    <a class="btn alt" id="open" href="#" target="_blank" rel="noopener">원본 열기</a>
+    <a class="btn alt" id="open" href="#" target="_blank" rel="noopener">이미지 열기</a>
   </div>
-  <p id="hint" role="status" hidden>다운로드가 안 되면 위 이미지를 길게 눌러 &lsquo;이미지 저장&rsquo;을 선택하세요. 카카오톡 안에서는 오른쪽 위 메뉴의 &lsquo;다른 브라우저로 열기&rsquo; 후 저장하면 됩니다.</p>
+  <p id="hint">다운로드가 안 되면 &lsquo;이미지 열기&rsquo;를 누르거나 위 이미지를 길게 눌러 &lsquo;이미지 저장&rsquo;을 선택하세요. 카카오톡 안에서 안 되면 오른쪽 위 메뉴의 &lsquo;다른 브라우저로 열기&rsquo; 후 저장하면 됩니다.</p>
   <footer>매일 아침 08:30(한국시간)에 새 카드가 만들어집니다. 명언 출처는 위키인용집, 초상·배경은 위키미디어 커먼스(퍼블릭 도메인)입니다. 카드는 명언, 한국어 번역, 명언자, 초상, 배경이 담긴 한 장의 이미지입니다.</footer>
 </main>
 <script>
@@ -55,6 +55,8 @@ function shown(day) {
   card.hidden = $('actions').hidden = false;
   state.hidden = true;
   $('open').href = current.url;
+  $('dl').href = current.url;                                         // blob이 아닌 .jpg 주소를 직접 연결(같은 사이트라 download 속성이 적용됨)
+  $('dl').download = 'quote-card-' + day + '.jpg';
   $('date').textContent = (day === kstToday() ? '오늘의 카드 · ' : '카드 · ') + day;
   if (navigator.canShare && navigator.canShare({files: [new File([], 'x.jpg', {type: 'image/jpeg'})]})) $('share').hidden = false;
 }
@@ -72,23 +74,11 @@ async function blobOfCard() {
   if (!r.ok) throw new Error('fetch');
   return r.blob();
 }
-$('dl').onclick = async () => {
-  if (!current) return;
-  try {
-    const blob = await blobOfCard();
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'quote-card-' + current.day + '.jpg';
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-    hint.hidden = false;                                              // 일부 인앱 브라우저는 다운로드를 막으므로 안내를 함께 표시
-  } catch (e) { window.open(current.url, '_blank'); hint.hidden = false; }
-};
 $('share').onclick = async () => {
   try {
     const file = new File([await blobOfCard()], 'quote-card-' + current.day + '.jpg', {type: 'image/jpeg'});
     await navigator.share({files: [file], title: '매일 명언 카드'});
-  } catch (e) { hint.hidden = false; }
+  } catch (e) { /* 공유를 취소했거나 지원하지 않으면 아래 안내 문구를 따르면 됨 */ }
 };
 load();
 </script>
