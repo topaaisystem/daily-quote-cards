@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import random
+import time
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -50,54 +51,82 @@ MIN_SCORE = 8            # 10점 만점, 이 점수 이상만 사용
 RATING_BUDGET = 25       # 한 번 실행에서 AI 평가 최대 호출 수(무료 한도 보호)
 
 
-def accepted(cand, budget):
-    """내용이 '힘이 나는 명언'인지 판정. AI 평가가 가능하면 점수, 아니면 보수적 키워드 필터."""
-    if budget['left'] > 0:
-        score = w.llm_score(cand['text'])
-        if score is not None:
+FALLBACK_SCORE = 6       # 8점 이상이 없을 때 차선으로 허용하는 최저 점수
+MAX_SECONDS = 600        # 후보 탐색 최대 시간(초)
+
+
+def rate(cands, budget):
+    """후보 명언들을 (점수, 후보)로 평가. AI 평가는 후보 묶음당 1회 호출, 불가하면 키워드 대체 필터(통과 8, 탈락 3)."""
+    if cands and budget['left'] > 0:
+        scores = w.llm_scores([c['text'] for c in cands])
+        if scores:
             budget['left'] -= 1
-            log(f"  평가 {score}/10: {cand['text'][:70]}")
-            return score >= MIN_SCORE
-    return not w.looks_off_topic(cand['text'])
+            for c, sc in zip(cands, scores):
+                log(f"  평가 {sc}/10: {c['text'][:70]}")
+            return list(zip(scores, cands))
+    return [(3 if w.looks_off_topic(c['text']) else 8, c) for c in cands]
 
 
-def pick(theme, day, attempt, history, limit=30):
+def pick(theme, day, attempt, history, limit=80):
     budget = {'left': RATING_BUDGET}
+    started = time.monotonic()
     rng = random.Random(f'{day}|{theme}|{attempt}')
     people = w.theme_people(theme)
     rng.shuffle(people)
+    log(f'  후보 인물 {len(people)}명')
+    best = None                                        # 8점 미만 중 최고(차선책)
     for name in people[:limit]:
+        if time.monotonic() - started > MAX_SECONDS:
+            log('  탐색 시간 초과')
+            break
         if name in history['people']:
             continue                                   # 한 번 보낸 인물은 당분간 제외
         info = w.person_info(name)
         if not info or not info['image'] or 'fiction' in info['desc'].lower() or w.NON_QUOTE_PERSON.search(info['desc']):
             continue
-        portrait = w.commons_file(info['image'], 700)
-        if not portrait:
-            log('  초상 라이선스 불충분, 건너뜀:', name)
-            continue
         cands = [q for q in w.sourced_quotes(w.wikitext(info['title']))
                  if w.on_theme(q['text'], theme) and quote_id(q['text']) not in history['used']]
         if not cands:
             continue
+        portrait = w.commons_file(info['image'], 700)
+        if not portrait:
+            log('  초상 라이선스 불충분, 건너뜀:', name)
+            continue
         rng.shuffle(cands)
-        for cand in cands[:6]:
-            if not accepted(cand, budget):
-                continue
-            ko, label = w.translate_ko(cand['text'])
-            if ko:
-                cand = dict(cand, ko_label=label)
-                return info, portrait, cand, ko
-    raise RuntimeError('조건(출처·초상 라이선스·주제)에 맞는 명언을 찾지 못했습니다. 다시 시도하세요.')
+        for score, cand in sorted(rate(cands[:12], budget), key=lambda x: -x[0]):
+            if score >= MIN_SCORE:
+                ko, label = w.translate_ko(cand['text'])
+                if ko:
+                    return info, portrait, dict(cand, ko_label=label), ko
+            elif score >= FALLBACK_SCORE and (best is None or score > best[0]):
+                best = (score, info, portrait, cand)
+    if best:
+        score, info, portrait, cand = best
+        ko, label = w.translate_ko(cand['text'])
+        if ko:
+            log(f'  차선책 사용({score}/10)')
+            return info, portrait, dict(cand, ko_label=label), ko
+    raise RuntimeError(f'주제 {theme}: 조건(출처·초상 라이선스·주제)에 맞는 명언을 찾지 못했습니다.')
 
 
 def make(theme=None, attempt=0, day=None):
     day = day or today()
     history = load_history()
     themes = list(w.THEMES)
+    theme_forced = bool(theme)
     theme = theme or themes[int(hashlib.sha256(day.encode()).hexdigest(), 16) % len(themes)]
-    log('주제:', theme)
-    info, portrait, cand, ko = pick(theme, day, attempt, history)
+    order = [theme] if theme_forced else [theme] + [t for t in themes if t != theme]   # 실패하면 다른 주제로 재시도
+    last = None
+    for theme in order:
+        log('주제:', theme)
+        try:
+            info, portrait, cand, ko = pick(theme, day, attempt, history)
+            break
+        except RuntimeError as exc:
+            last = exc
+            log('  실패:', exc)
+    else:
+        raise last
     seed = int(hashlib.sha256(f'{day}{attempt}'.encode()).hexdigest(), 16) % 1000
     bg = w.background(seed)
     if not bg:

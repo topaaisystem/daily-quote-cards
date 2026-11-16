@@ -9,10 +9,10 @@ import urllib.request
 
 UA = 'DailyQuoteCard/0.1 (personal non-commercial project)'
 THEMES = {
-    'courage': ['Courage', 'Bravery', 'Fear'],
-    'strength': ['Strength', 'Perseverance', 'Determination', 'Resilience'],
-    'joy': ['Happiness', 'Joy', 'Optimism', 'Gratitude'],
-    'success': ['Success', 'Achievement', 'Hope', 'Confidence'],
+    'courage': ['Courage', 'Bravery', 'Fear', 'Heroism', 'Determination'],
+    'strength': ['Strength', 'Perseverance', 'Resilience', 'Patience', 'Endurance', 'Hard work'],
+    'joy': ['Happiness', 'Joy', 'Optimism', 'Gratitude', 'Smile', 'Laughter', 'Kindness'],
+    'success': ['Success', 'Achievement', 'Hope', 'Confidence', 'Motivation', 'Ambition', 'Dreams'],
 }
 BAD_SECTIONS = re.compile(r'disputed|misattributed|quotes about|external links|see also|references|further reading|sources|about\b', re.I)
 PD_LICENSE = re.compile(r'public domain|^pd\b|^pd-|cc0|cc-zero', re.I)
@@ -64,13 +64,13 @@ def clean(text):
 
 
 def theme_people(theme):
-    """주제 문서(Courage 등)에서 '~ [[인물]]'로 표시된 인물 이름을 모읍니다."""
+    """주제 문서들에서 인용 출처로 표시된 인물 이름을 모읍니다('~ [[인물]]', '** [[인물]]', 'by/— [[인물]]')."""
     names = []
+    pat = re.compile(r'~\s*\[\[([^\]|#]+)|^\*\*\s*\[\[([^\]|#]+)|(?:\bby|\u2014)\s+\[\[([^\]|#]+)', re.M)
     for page in THEMES[theme]:
-        text = wikitext(page)
-        for m in re.finditer(r'~\s*\[\[([^\]|#]+)', text):
-            n = m.group(1).strip()
-            if n and n not in names:
+        for m in pat.finditer(wikitext(page)):
+            n = next(g for g in m.groups() if g).strip()
+            if n and ':' not in n and n not in names:
                 names.append(n)
     return names
 
@@ -218,7 +218,8 @@ RATE_SYSTEM = ('You judge quotations for a MORNING motivational message. Reply w
                'religious disputes, insults, jokes, descriptions of events, anything that needs outside context to '
                'make sense, or a negative or pessimistic tone.')
 OFF_TOPIC = re.compile(r'\b(war|wars|nation|nations|government|congress|treaty|enemy|enemies|soldier|army|political|'
-                       r'policy|tax|taxes|election|vote|senate|diplomacy|communis\w*|foreign|world affairs)\b', re.I)
+                       r'policy|tax|taxes|election|vote|senate|diplomacy|communis\w*|foreign|world affairs|aggress\w*|military|defense|'
+                       r'defence|weapon\w*|atomic|nuclear|soviet|battle\w*|invasion|colon\w*|slave\w*|tyran\w*)\b', re.I)
 
 
 def looks_off_topic(text):
@@ -226,22 +227,34 @@ def looks_off_topic(text):
     return OFF_TOPIC.search(text) is not None
 
 
-def llm_score(text):
-    """명언이 '아침에 힘이 나는 명언'인지 1~10점으로 평가. 키가 없거나 실패하면 None."""
+def llm_scores(texts):
+    """여러 명언을 한 번의 호출로 평가해 점수 목록(1~10)을 반환. 키가 없거나 실패·형식 불일치면 None."""
     import os
     key = os.environ.get('TRANSLATE_API_KEY') or os.environ.get('GROQ_API_KEY')
-    if not key:
+    if not key or not texts:
         return None
     base = os.environ.get('TRANSLATE_BASE_URL', 'https://api.groq.com/openai/v1').rstrip('/')
     model = os.environ.get('TRANSLATE_MODEL', 'openai/gpt-oss-120b')
+    numbered = '\n'.join(f'{i + 1}. {t}' for i, t in enumerate(texts))
+    system = RATE_SYSTEM.replace('{"score": 7}', '{"scores": [7, 3, 9]}').replace(
+        'Reply with ONLY a JSON object like', 'Rate EACH numbered quotation and reply with ONLY a JSON object, one score per quotation in order, like')
     try:
         data = _post_json(f'{base}/chat/completions', {
-            'model': model, 'temperature': 0, 'max_completion_tokens': 600,
-            'messages': [{'role': 'system', 'content': RATE_SYSTEM}, {'role': 'user', 'content': text}]}, key)
-        m = re.search(r'"score"\s*:\s*(\d+)', data['choices'][0]['message']['content'])
-        return min(int(m.group(1)), 10) if m else None
+            'model': model, 'temperature': 0, 'max_completion_tokens': 1500,
+            'messages': [{'role': 'system', 'content': system}, {'role': 'user', 'content': numbered}]}, key)
+        body = data['choices'][0]['message']['content']
+        scores = json.loads(re.search(r'\{.*\}', body, re.S).group(0))['scores']
+        if len(scores) != len(texts) or not all(isinstance(x, (int, float)) for x in scores):
+            return None
+        return [max(1, min(10, int(x))) for x in scores]
     except Exception:
         return None
+
+
+def llm_score(text):
+    """단일 명언 평가(호환용). 키가 없거나 실패하면 None."""
+    scores = llm_scores([text])
+    return scores[0] if scores else None
 
 
 def translate_ko(text):

@@ -71,27 +71,77 @@ class FreeSourceTests(unittest.TestCase):
                 patch.object(w, 'mymemory_ko', return_value='대체 번역입니다.'):
             self.assertEqual(w.translate_ko('Hello there my friend.')[1], '자동 번역(MyMemory)')
 
-    def test_llm_score_parsing_and_missing_key(self):
-        reply = {'choices': [{'message': {'content': '{"score": 9}'}}]}
+    def test_batch_scores_parsing_and_failures(self):
+        reply = {'choices': [{'message': {'content': 'sure: {"scores": [9, 3]}'}}]}
         with patch.dict('os.environ', {'GROQ_API_KEY': 'k'}), patch.object(w, '_post_json', return_value=reply):
-            self.assertEqual(w.llm_score('Keep going.'), 9)
+            self.assertEqual(w.llm_scores(['Keep going.', 'War policy.']), [9, 3])
+            self.assertEqual(w.llm_score('Keep going.'), None)          # 개수 불일치(2개 응답/1개 질문) → None
+        wrong = {'choices': [{'message': {'content': '{"scores": [9]}'}}]}
+        with patch.dict('os.environ', {'GROQ_API_KEY': 'k'}), patch.object(w, '_post_json', return_value=wrong):
+            self.assertIsNone(w.llm_scores(['a', 'b']))
         with patch.dict('os.environ', {}, clear=True), patch.object(w, '_post_json', side_effect=AssertionError('호출 금지')):
-            self.assertIsNone(w.llm_score('Keep going.'))
+            self.assertIsNone(w.llm_scores(['Keep going.']))
         with patch.dict('os.environ', {'GROQ_API_KEY': 'k'}), patch.object(w, '_post_json', side_effect=OSError('x')):
-            self.assertIsNone(w.llm_score('Keep going.'))
+            self.assertIsNone(w.llm_scores(['Keep going.']))
 
-    def test_political_quote_rejected_by_score_and_by_fallback(self):
+    def test_rate_uses_scores_then_falls_back_to_keywords(self):
         import free_pipeline as fp
-        cand = {'text': 'There is in world affairs a steady course between strength and helplessness.'}
-        with patch.object(w, 'llm_score', return_value=3):
-            self.assertFalse(fp.accepted(cand, {'left': 5}))
-        with patch.object(w, 'llm_score', return_value=9):
-            self.assertTrue(fp.accepted({'text': 'Never give up on a dream.'}, {'left': 5}))
-        with patch.object(w, 'llm_score', return_value=None):      # 키 없음 → 키워드 대체 필터
-            self.assertFalse(fp.accepted(cand, {'left': 5}))
-            self.assertTrue(fp.accepted({'text': 'Never give up on a dream.'}, {'left': 5}))
-        with patch.object(w, 'llm_score', side_effect=AssertionError('예산 소진 후 호출 금지')):
-            self.assertTrue(fp.accepted({'text': 'Never give up on a dream.'}, {'left': 0}))
+        cands = [{'text': 'Never give up on a dream.'}, {'text': 'There is in world affairs a steady course.'}]
+        with patch.object(w, 'llm_scores', return_value=[9, 3]):
+            self.assertEqual([s for s, _ in fp.rate(cands, {'left': 5})], [9, 3])
+        with patch.object(w, 'llm_scores', return_value=None):      # 키 없음 → 키워드 대체(정치 문장만 탈락)
+            self.assertEqual([s for s, _ in fp.rate(cands, {'left': 5})], [8, 3])
+        with patch.object(w, 'llm_scores', side_effect=AssertionError('예산 소진 후 호출 금지')):
+            self.assertEqual([s for s, _ in fp.rate(cands, {'left': 0})], [8, 3])
+
+    def _patch_world(self, scores, people=('A Person',)):
+        import free_pipeline as fp
+        info = {'title': 'A Person', 'desc': 'Poet', 'ko': '가나다', 'image': 'x.jpg'}
+        quotes = [{'text': f'Courage lives in quote number {i} always.', 'source': 'Book'} for i in range(3)]
+        return [patch.object(w, 'theme_people', return_value=list(people)), patch.object(w, 'person_info', return_value=info),
+                patch.object(w, 'wikitext', return_value=''), patch.object(w, 'sourced_quotes', return_value=quotes),
+                patch.object(w, 'commons_file', return_value={'license': 'Public domain', 'artist': '', 'page': 'p', 'url': 'u'}),
+                patch.object(w, 'llm_scores', return_value=scores), patch.object(w, 'translate_ko', return_value=('번역', 'AI 번역'))], fp
+
+    def test_pick_prefers_high_score_and_accepts_relaxed_best(self):
+        patches, fp = self._patch_world([9, 4, 6])
+        for p in patches: p.start()
+        try:
+            info, portrait, cand, ko = fp.pick('courage', '2026-11-16', 0, {'people': {}, 'used': []})
+            self.assertEqual(cand['text'], 'Courage lives in quote number 0 always.')     # 9점
+        finally:
+            for p in patches: p.stop()
+        patches, fp = self._patch_world([4, 7, 5])                                    # 8점 없음 → 차선책(7점)
+        for p in patches: p.start()
+        try:
+            cand = fp.pick('courage', '2026-11-16', 0, {'people': {}, 'used': []})[2]
+            self.assertEqual(cand['text'], 'Courage lives in quote number 1 always.')
+        finally:
+            for p in patches: p.stop()
+
+    def test_pick_fails_when_everything_scores_low(self):
+        patches, fp = self._patch_world([2, 3, 4])
+        for p in patches: p.start()
+        try:
+            with self.assertRaises(RuntimeError):
+                fp.pick('courage', '2026-11-16', 0, {'people': {}, 'used': []})
+        finally:
+            for p in patches: p.stop()
+
+    def test_make_retries_other_themes(self):
+        import free_pipeline as fp
+        calls = []
+        def fake_pick(theme, *a, **k):
+            calls.append(theme)
+            raise RuntimeError('none')
+        with patch.object(fp, 'pick', side_effect=fake_pick), patch.object(fp, 'load_history', return_value={'people': {}, 'used': []}):
+            with self.assertRaises(RuntimeError):
+                fp.make(day='2026-11-16')
+            self.assertEqual(sorted(calls), sorted(w.THEMES))                           # 주제 4개 모두 시도
+            calls.clear()
+            with self.assertRaises(RuntimeError):
+                fp.make(theme='joy', day='2026-11-16')
+            self.assertEqual(calls, ['joy'])                                            # 주제를 지정하면 그것만
 
     def test_double_dash_is_normalized(self):
         text = "== Sourced ==\n* There is -- in this life -- always a way forward for the brave heart.\n** Letters (1900)\n"
