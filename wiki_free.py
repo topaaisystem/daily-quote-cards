@@ -90,6 +90,21 @@ def on_theme(text, theme):
     return re.search(THEME_WORDS[theme], text, re.I) is not None
 
 
+ENGLISH_WORDS = {'the', 'a', 'an', 'of', 'to', 'and', 'is', 'are', 'was', 'were', 'in', 'it', 'that', 'you', 'your', 'be', 'not',
+                 'but', 'for', 'with', 'as', 'on', 'will', 'who', 'what', 'we', 'they', 'he', 'she', 'his', 'her', 'our', 'by',
+                 'at', 'from', 'have', 'has', 'do', 'if', 'or', 'no', 'all', 'can', 'one', 'i', 'my', 'me', 'this', 'there'}
+
+
+def is_english(text):
+    """영어 명언인지 판별: 영어 기능어 비율이 충분하고 악센트 문자가 거의 없어야 함(프랑스어·라틴어 원문 제외)."""
+    words = re.findall(r"[A-Za-z']+", text.lower())
+    if len(words) < 4:
+        return False
+    hits = sum(word in ENGLISH_WORDS for word in words)
+    accents = sum(ord(c) > 127 and c.isalpha() for c in text)
+    return hits / len(words) >= 0.25 and accents <= 1
+
+
 def sourced_quotes(text):
     """출처가 붙은 명언만 반환: '**' 하위 줄에 출처가 있거나 작품명 소제목 아래 있는 항목.
     Disputed/Misattributed/'Quotes about' 구간은 제외."""
@@ -119,6 +134,8 @@ def sourced_quotes(text):
             continue                                   # 노래 가사는 명언으로 쓰지 않음
         if not source or not (35 <= len(body) <= 170) or not re.search(r'[A-Za-z]{4}', body):
             continue
+        if not is_english(body):
+            continue                                   # 외국어 원문(번역은 하위 줄) 제외
         if body.startswith('[') or re.search(r'translation\)|\bed\.\b|\bpp?\.', body) or not body.rstrip('"”').endswith(('.', '!', '?')):
             continue  # 편집 표기·번역본 주석·미완결 문장 제외
         if re.search(r'\b(said|wrote|asked)\b[: ,]*$', body):

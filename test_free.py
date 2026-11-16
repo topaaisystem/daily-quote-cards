@@ -143,6 +143,14 @@ class FreeSourceTests(unittest.TestCase):
                 fp.make(theme='joy', day='2026-11-16')
             self.assertEqual(calls, ['joy'])                                            # 주제를 지정하면 그것만
 
+    def test_non_english_originals_are_rejected(self):
+        self.assertFalse(w.is_english('Patience et longueur de temps Font plus que force ni que rage.'))
+        self.assertFalse(w.is_english('Veni, vidi, vici est la victoire.'))
+        self.assertTrue(w.is_english('Develop enough courage so that you can stand up for yourself.'))
+        self.assertTrue(w.is_english('Never give up on a dream.'))
+        text = "== Sourced ==\n* Patience et longueur de temps Font plus que force ni que rage.\n** Fables (1668), book II\n"
+        self.assertEqual(w.sourced_quotes(text), [])
+
     def test_double_dash_is_normalized(self):
         text = "== Sourced ==\n* There is -- in this life -- always a way forward for the brave heart.\n** Letters (1900)\n"
         self.assertIn('—', w.sourced_quotes(text)[0]['text'])
