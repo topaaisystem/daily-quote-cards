@@ -30,6 +30,23 @@ def today():
     return datetime.now(KST).date().isoformat()
 
 
+def spare_schedule():
+    """GitHub 예약 실행 중 주 실행(UTC 17 22)이 아닌 예비 cron이면 True.
+
+    워크플로 파일을 고치지 않아도, 늦게 도는 예비 실행에서는 이미지가 429로
+    막혀도 글자 카드로 그날을 채우게 합니다. 수동(workflow_dispatch) 실행은 False.
+    """
+    path = os.environ.get('GITHUB_EVENT_PATH')
+    if not path:
+        return False
+    try:
+        event = json.loads(Path(path).read_text(encoding='utf-8'))
+    except Exception:
+        return False
+    schedule = event.get('schedule')
+    return bool(schedule) and schedule != '17 22 * * *'
+
+
 def load_history():
     return json.loads(HISTORY.read_text(encoding='utf-8')) if HISTORY.exists() else {'used': [], 'people': {}}
 
@@ -193,7 +210,10 @@ if __name__ == '__main__':
     if a.publish and already_handled(today()):
         log(f'{today()} 는 이미 발송 처리됨. 카드를 다시 만들지 않습니다.')
         sys.exit(0)
-    r = make(a.theme, a.attempt, allow_fallback=a.allow_fallback)
+    allow_fallback = a.allow_fallback or spare_schedule()
+    if allow_fallback and not a.allow_fallback:
+        log('예비 실행: 이미지가 429로 막히면 글자 카드로 진행합니다.')
+    r = make(a.theme, a.attempt, allow_fallback=allow_fallback)
     if a.publish:
         log('게시용 복사:', publish(r['day']))
     print(json.dumps({'card': str(OUT / r['day'] / 'card.jpg'), 'person': r['person']['name'], 'en': r['quote']['en'], 'ko': r['quote']['ko']}, ensure_ascii=False, indent=2))
