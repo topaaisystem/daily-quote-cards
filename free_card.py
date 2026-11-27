@@ -72,10 +72,36 @@ def circle_portrait(data, diameter):
     return img, mask
 
 
+def gradient_background(side=SIZE):
+    """배경 이미지를 못 받아도 카드가 나가도록 쓰는 어두운 그라데이션."""
+    img = Image.new('RGB', (side, side))
+    d = ImageDraw.Draw(img)
+    for y in range(side):
+        t = y / side
+        d.line((0, y, side, y), fill=(int(18 + 26 * t), int(22 + 30 * t), int(34 + 40 * t)))
+    return img
+
+
+def monogram(name, diameter):
+    """초상 이미지를 못 받았을 때 넣는 이름 첫 글자 원형 배지(초상 대신)."""
+    big = Image.new('RGB', (diameter * 4, diameter * 4), (28, 32, 44))
+    d = ImageDraw.Draw(big)
+    letter = next((c for c in name if c.isalnum()), '?')
+    d.text((diameter * 2, diameter * 2), letter, font=ImageFont.truetype(str(FONTS / 'CrimsonText-SemiBoldItalic.ttf'), int(diameter * 2.1)),
+           fill=GOLD, anchor='mm')
+    mask = Image.new('L', (diameter * 4, diameter * 4), 0)
+    ImageDraw.Draw(mask).ellipse((0, 0, diameter * 4 - 1, diameter * 4 - 1), fill=255)
+    return (big.resize((diameter, diameter), Image.Resampling.LANCZOS),
+            mask.resize((diameter, diameter), Image.Resampling.LANCZOS))
+
+
 def render(record, portrait_bytes, background_bytes, out_path):
+    """카드 한 장을 만듭니다. 초상·배경 이미지가 None이면 글자 배지·그라데이션으로 대신합니다."""
     q = record['quote']
     person, port, bg = record['person'], record['portrait'], record['background']
-    canvas = ImageEnhance.Brightness(cover(Image.open(io.BytesIO(background_bytes)), SIZE)).enhance(0.55)
+    base = (ImageEnhance.Brightness(cover(Image.open(io.BytesIO(background_bytes)), SIZE)).enhance(0.55)
+            if background_bytes else gradient_background(SIZE))
+    canvas = base
     shade = Image.new('RGBA', (SIZE, SIZE), (0, 0, 0, 0))
     sd = ImageDraw.Draw(shade)
     for y in range(SIZE):                              # 아래로 갈수록 어두운 그라데이션
@@ -105,7 +131,7 @@ def render(record, portrait_bytes, background_bytes, out_path):
     panel = Image.new('RGBA', (SIZE, 330), (6, 8, 16, 170))
     canvas.alpha_composite(panel, (0, 1116))
     draw = ImageDraw.Draw(canvas)
-    pic, mask = circle_portrait(portrait_bytes, 250)
+    pic, mask = circle_portrait(portrait_bytes, 250) if portrait_bytes else monogram(person['name'], 250)
     canvas.paste(pic, (96, 1156), mask)
     draw.ellipse((92, 1152, 350, 1410), outline=GOLD, width=4)
 

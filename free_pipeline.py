@@ -109,7 +109,16 @@ def pick(theme, day, attempt, history, limit=80):
     raise RuntimeError(f'주제 {theme}: 조건(출처·초상 라이선스·주제)에 맞는 명언을 찾지 못했습니다.')
 
 
-def make(theme=None, attempt=0, day=None):
+def _download_or_none(url, label):
+    """이미지 한 장을 받아 옵니다. 재시도를 다 거듭해도 429가 풀리지 않으면 None을 돌려 카드 제작을 멈추지 않습니다."""
+    try:
+        return w.download(url)
+    except RuntimeError as exc:
+        log(f'  {label} 이미지 실패 → 대체 그림으로 진행: {exc}')
+        return None
+
+
+def make(theme=None, attempt=0, day=None, allow_fallback=False):
     day = day or today()
     history = load_history()
     themes = list(w.THEMES)
@@ -142,7 +151,14 @@ def make(theme=None, attempt=0, day=None):
         'attempt': attempt,
     }
     folder = OUT / day
-    free_card.render(record, w.download(portrait['url']), w.download(bg['url']), folder / 'card.jpg')
+    portrait_bytes = _download_or_none(portrait['url'], '초상') if allow_fallback else w.download(portrait['url'])
+    if portrait_bytes is None:
+        record['portrait'] = {'license': '없음(글자 배지)', 'artist': '', 'page': ''}
+    background_bytes = _download_or_none(bg['url'], '배경') if allow_fallback else w.download(bg['url'])
+    if background_bytes is None:
+        record['background'] = {'title': 'generated gradient', 'license': 'own work', 'page': ''}
+    record['fallback'] = {'portrait': portrait_bytes is None, 'background': background_bytes is None}
+    free_card.render(record, portrait_bytes, background_bytes, folder / 'card.jpg')
     (folder / 'record.json').write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding='utf-8')
     return record
 
@@ -171,11 +187,13 @@ if __name__ == '__main__':
     p.add_argument('--theme', choices=list(w.THEMES))
     p.add_argument('--attempt', type=int, default=0)
     p.add_argument('--publish', action='store_true', help='cards/<날짜>.jpg 로 복사(Pages용)')
+    p.add_argument('--allow-fallback', action='store_true',
+                   help='초상·배경 이미지가 429로 끝내 막히면 글자 배지·그라데이션 카드로라도 발송(예비 실행용)')
     a = p.parse_args()
     if a.publish and already_handled(today()):
         log(f'{today()} 는 이미 발송 처리됨. 카드를 다시 만들지 않습니다.')
         sys.exit(0)
-    r = make(a.theme, a.attempt)
+    r = make(a.theme, a.attempt, allow_fallback=a.allow_fallback)
     if a.publish:
         log('게시용 복사:', publish(r['day']))
     print(json.dumps({'card': str(OUT / r['day'] / 'card.jpg'), 'person': r['person']['name'], 'en': r['quote']['en'], 'ko': r['quote']['ko']}, ensure_ascii=False, indent=2))

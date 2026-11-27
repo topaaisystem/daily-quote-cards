@@ -2,8 +2,10 @@
 유료 API·API 키 없음. 요청에는 식별 가능한 User-Agent를 붙이고 호출 사이에 짧게 쉽니다.
 """
 import json
+import random
 import re
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -18,15 +20,50 @@ BAD_SECTIONS = re.compile(r'disputed|misattributed|quotes about|external links|s
 PD_LICENSE = re.compile(r'public domain|^pd\b|^pd-|cc0|cc-zero', re.I)
 
 
-def _get(url, tries=4):
+def _retry_after(exc, cap=300):
+    """429 응답의 Retry-After(초 또는 날짜)를 읽어 대기 초를 돌려줍니다(없으면 0)."""
+    value = getattr(exc, 'headers', None)
+    value = value.get('Retry-After') if value else None
+    if not value:
+        return 0
+    value = value.strip()
+    if value.isdigit():
+        return min(cap, int(value))
+    try:
+        from email.utils import parsedate_to_datetime
+        return max(0, min(cap, int(parsedate_to_datetime(value).timestamp() - time.time())))
+    except Exception:
+        return 0
+
+
+def _get(url, tries=5):
+    """요청 하나를 최대 tries번 재시도합니다.
+
+    429(요청 과다)는 Wikimedia가 알려 주는 Retry-After를 따르고, 없으면 지수 백오프
+    (10·20·40·80초 + 흔들기)로 기다립니다. 예전에는 6·12·18·24초 합계 1분이라
+    1분 넘게 이어지는 Wikimedia 차단을 넘기지 못해 그날 카드가 통째로 사라졌습니다.
+    다시 시도해도 같은 답인 4xx(404 등)는 곧바로 포기해 429 한도를 아낍니다.
+    """
     last = None
     for i in range(tries):
         try:
             with urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent': UA}), timeout=30) as r:
                 return r.read()
-        except Exception as exc:  # 네트워크 오류·429(요청 과다)는 점점 길게 쉬고 재시도
+        except urllib.error.HTTPError as exc:
             last = exc
-            time.sleep(6 * (i + 1) if '429' in str(exc) else 1.5 * (i + 1))
+            if exc.code == 429:
+                wait = _retry_after(exc) or min(300, 10 * 2 ** i) + random.uniform(0, 3)
+            elif 500 <= exc.code < 600:
+                wait = 5 * (i + 1)
+            else:
+                break
+            if i < tries - 1:
+                print(f'    재시도 {i + 1}/{tries - 1}: HTTP {exc.code} → {int(wait)}초 대기')
+                time.sleep(wait)
+        except Exception as exc:  # 네트워크 오류·시간 초과는 점점 길게 쉬고 재시도
+            last = exc
+            if i < tries - 1:
+                time.sleep(1.5 * (i + 1))
     raise RuntimeError(f'요청 실패: {url[:90]} ({last})')
 
 
